@@ -199,8 +199,25 @@ def test_rar_without_rarfile_is_reported(tmp_path, monkeypatch):
     fake = tmp_path / "fake.rar"
     fake.write_bytes(b"Rar!\x1a\x07\x00" + b"\0" * 64)
     monkeypatch.setitem(__import__("sys").modules, "rarfile", None)
-    with pytest.raises(UnsupportedFormatError, match="rarfile"):
+    # Without rarfile the libarchive/7-Zip route is used; a broken file must fail cleanly.
+    with pytest.raises(RiftUnpackError):
         extract_archive(fake, tmp_path / "out")
+
+
+@needs_libarchive
+def test_rar4_stored_roundtrip_without_unrar(tmp_path, monkeypatch):
+    """Hand-built RAR4 (stored) archive read by libarchive when no UnRAR tool exists."""
+    import rar4_factory
+
+    monkeypatch.setattr("riftunpack.engine._rar_python_tool_available", lambda: False)
+    archive = rar4_factory.write_rar4_stored(
+        tmp_path / "pack.rar", {"hello.txt": b"rar-store", "dir/x.bin": bytes(range(200))}
+    )
+    destination = tmp_path / "out"
+    report = extract_archive(archive, destination)
+    assert report.extracted == 2
+    assert (destination / "hello.txt").read_bytes() == b"rar-store"
+    assert (destination / "dir" / "x.bin").read_bytes() == bytes(range(200))
 
 
 def test_7z_without_py7zr_and_without_7zip(tmp_path, monkeypatch):
