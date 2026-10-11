@@ -27,6 +27,9 @@
 - Real GUI screenshot in the README (replaces the drawn preview).
 
 ### Changed
+- RAR without an UnRAR-compatible tool is read through libarchive (then 7-Zip) instead of failing immediately; uncompressed RAR4 is covered by a test.
+- CAB: uncompressed CAB fixtures are built in Python and tested through libarchive on every platform.
+- `extract --seven-zip PATH` selects the 7-Zip executable.
 - README: formats table states what is tested and what is experimental; the unverified "Pro" section was removed; examples were run against fixtures.
 - Drag-and-drop is described as a standard dependency (it was described as optional).
 
