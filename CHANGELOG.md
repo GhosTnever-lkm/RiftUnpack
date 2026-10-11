@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.0.3] - 2026-10-11
+
+### Fixed
+- `list` on an encrypted 7z archive no longer crashes with an internal py7zr exception; it now reports that a password is required, and the CLI re-prompts once.
+
+### Added
+- CLI tests for the `test` command, `--here` extraction, encrypted-archive re-prompts (list and extract), known-error batch reporting, and friendly errors for missing files.
+- Engine tests for corrupt ZIP/TAR/7z files with valid signatures, RAR4 member parsing through rarfile, RAR tool detection, and missing-backend messages.
+- Local coverage without a display: cli.py 84% -> 96%, engine.py 84% -> 87%, total 76% -> 79% (gui.py needs a display and is covered in CI).
+
 ## [1.0.2] - 2026-10-11
 
 ### Added
