@@ -15,6 +15,12 @@
 - Committed to main via browser (head 19a3ccb). Release v1.0.2 published: https://github.com/GhosTnever-lkm/RiftUnpack/releases/tag/v1.0.2
 - Remaining: raise non-GUI coverage toward the 80% floor (cli.py, engine.py); CI status for 19a3ccb not yet checked.
 
+## Iteration v1.0.3 (2026-10-11)
+- Fixed: `list_archive` on an encrypted 7z leaked `py7zr.PasswordRequired`; it now raises `PasswordRequiredError` like extraction does, so `riftunpack list` re-prompts instead of crashing.
+- Added 6 CLI tests (`test` command, `--here`, encrypted re-prompts, batch known-error, missing file) and 7 engine edge tests (corrupt ZIP/TAR/7z with valid signatures, RAR4 parsing via rarfile, RAR tool detection, missing-backend message).
+- Local: 133 passed, 2 skipped; ruff, ruff format, mypy clean. Coverage: cli.py 96%, engine.py 87%, total 79% without a display (gui.py 142 statements need tkinter; CI covers them).
+- Version bumped to 1.0.3 (pyproject, `__init__`, README, CHANGELOG).
+
 ## Audit report (v1.0.1)
 
 Scope: the audit checklist (fresh main, tests and coverage, GUI, Windows executables, README, quality, security, STATE).
