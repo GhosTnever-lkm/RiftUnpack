@@ -67,6 +67,11 @@ def _parser() -> argparse.ArgumentParser:
         default=20,
         help="maximum expanded size per archive (default: 20 GB)",
     )
+    extract.add_argument(
+        "--seven-zip",
+        metavar="PATH",
+        help="7-Zip executable to use for 7z/ZIP-AES/split fallbacks (default: found on PATH)",
+    )
     extract.add_argument("--max-files", type=int, default=100000, help="maximum files per archive")
     extract.add_argument("--max-ratio", type=float, default=1000, help="maximum compression ratio")
     extract.add_argument(
@@ -95,6 +100,7 @@ def _options(args, password: str | None = None) -> ExtractOptions:
         password=password,
         include=getattr(args, "include", None),
         encoding=getattr(args, "encoding", None),
+        seven_zip=getattr(args, "seven_zip", None),
     )
 
 
