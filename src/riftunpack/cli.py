@@ -125,7 +125,17 @@ def _destination(archive: Path, args, archive_count: int = 1) -> Path:
     return archive.with_name(f"{archive_base_name(archive)}_extracted")
 
 
+def _use_utf8_output() -> None:
+    """Windows pipes default to cp1252 and cannot print RiftUnpack's symbols (✓ → —)."""
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[union-attr]
+        except (AttributeError, ValueError):
+            pass
+
+
 def main(argv: list[str] | None = None) -> int:
+    _use_utf8_output()
     args = _parser().parse_args(argv)
     try:
         if args.command == "list":
