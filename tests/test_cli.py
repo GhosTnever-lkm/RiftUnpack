@@ -139,3 +139,18 @@ def test_cli_password_is_prompted_only_when_needed(tmp_path, monkeypatch):
         z.writestr("open.txt", "plain")
     assert main(["extract", str(path)]) == 0
     assert calls == []
+
+
+def test_cli_output_survives_cp1252_pipe(tmp_path, monkeypatch):
+    """Frozen Windows builds piped through cp1252 must not crash on ✓ or → in messages."""
+    import io
+    import sys
+
+    path = tmp_path / "pipe.zip"
+    with zipfile.ZipFile(path, "w") as z:
+        z.writestr("a.txt", "a")
+    legacy = io.TextIOWrapper(io.BytesIO(), encoding="cp1252", errors="strict")
+    monkeypatch.setattr(sys, "stdout", legacy)
+    monkeypatch.setattr(sys, "stderr", io.TextIOWrapper(io.BytesIO(), encoding="cp1252"))
+    assert main(["extract", str(path)]) == 0
+    legacy.flush()
