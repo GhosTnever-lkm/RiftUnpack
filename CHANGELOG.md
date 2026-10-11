@@ -1,6 +1,6 @@
 # Changelog
 
-## [1.0.1] - Unreleased
+## [1.0.1] - 2026-10-11
 
 ### Fixed
 - ISO and CAB archives read through libarchive crashed on every entry (libarchive-c exposes `isdir`, `isreg`, `issym`, `islnk` as properties); ISO root entries are now skipped.

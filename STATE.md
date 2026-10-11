@@ -6,7 +6,7 @@
 3. [x] Tkinter GUI: drag-and-drop (when tkdnd loads), destination, password prompt, progress, log, cancellation.
 4. [x] Tests and lint: real-archive tests, GUI/job tests, ruff, mypy, coverage floor 80% in CI.
 5. [x] Docs and CI: README (tested claims only), CHANGELOG, templates, workflow with Windows executable smoke test.
-6. [ ] Publish v1.0.1: push to GitHub, confirm CI green on all jobs, confirm release `v1.0.1` with both `.exe` files.
+6. [x] Publish v1.0.1: pushed to GitHub; CI run #16 green on all jobs (checks x6, executables smoke test, release); release `v1.0.1` has `RiftUnpack.exe` and `RiftUnpack-GUI.exe`.
 
 ## Audit report (v1.0.1)
 
@@ -32,7 +32,7 @@ Scope: the audit checklist (fresh main, tests and coverage, GUI, Windows executa
 
 ### Remaining / to verify
 - CI on GitHub for the new workflow (Ubuntu and Windows matrix, executable smoke test, release job) — pending the v1.0.1 push.
-- Windows executables: built and smoke-tested only in CI (no Windows machine here).
+- Windows executables: built and smoke-tested in CI (run #16). Found and fixed on the way: frozen CLI crashed when piped on cp1252 consoles (UTF-8 output now forced); a wrong ZipCrypto password could surface as a CRC error on Windows (now mapped to a password error).
 - GUI on Windows: tests run in CI on Windows; locally verified only under Xvfb on Linux.
 
 ## Verified locally (sandbox: Linux, Python 3.13 with tkinter via Xvfb)
@@ -63,7 +63,7 @@ Experimental (code path exists, not verified with real archives):
 1. **7-Zip password on the command line.** The 7-Zip fallback (for ZIP AES and some 7z archives) passes the password with `-p`, so it can appear in the process list for other local users while 7-Zip runs. 7-Zip has no stdin/file password option that we can use here. Mitigation: prefer built-in readers; documented in README.
 2. **RAR is unverified with real archives.** No RAR creator is available in CI; the RAR path needs a manual test with a real archive before it can be promoted from experimental.
 3. **Split RAR and `.z01` are unverified** (detection and grouping only).
-4. **CAB is verified only on Windows** (via `makecab`). Linux relies on libarchive or 7-Zip and has no automated test.
+4. **CAB is verified only on Windows** (via `makecab`). The CI fixture test skips with makecab's output when the fixture cannot be built (it failed once on Windows CI). Linux relies on libarchive or 7-Zip and has no automated test.
 5. **Windows context menu is untested by automation.**
 6. **`--seven-zip` path is not exposed in the CLI** (internal option only; the auto-detected 7-Zip is used).
 7. **Empty single-stream `.gz` is detected as `.tar.gz`** (it is a valid empty tar); the result is an empty folder, not an error.
@@ -74,7 +74,7 @@ Experimental (code path exists, not verified with real archives):
 - GitHub connector token: read-only in practice (403 on create repo and on contents writes). Changes are uploaded through the browser (the shared browser is logged in).
 - Commit 924936a (`fix: preserve readable defaults for ZIP entries without mode`) was made by someone else; it is kept as is.
 - Release v1.0.0 exists with both Windows executables (built before this audit).
-- Release v1.0.1 is produced by the workflow on push to main, tag `v1.0.1`.
+- Release v1.0.1 published by the workflow: https://github.com/GhosTnever-lkm/RiftUnpack/releases/tag/v1.0.1 (tag follows `riftunpack.__version__`).
 
 ## Next steps (after CI result)
 1. Confirm CI: checks on ubuntu/windows x 3.10–3.12, executable smoke test, release `v1.0.1` with both `.exe` assets.
