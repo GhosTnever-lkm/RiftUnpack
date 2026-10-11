@@ -48,6 +48,39 @@ def detect_format(path: str | Path) -> str | None:
     return None
 
 
+_COMPOUND_SUFFIXES = (
+    ".tar.gz",
+    ".tar.bz2",
+    ".tar.xz",
+    ".tar.zst",
+    ".tgz",
+    ".tbz2",
+    ".txz",
+    ".tzst",
+)
+
+
+def archive_base_name(path: str | Path) -> str:
+    """Folder name for an archive: ``mods.tar.gz`` -> ``mods``, ``data.7z.001`` -> ``data``."""
+    name = Path(path).name
+    lower = name.lower()
+    for suffix in _COMPOUND_SUFFIXES:
+        if lower.endswith(suffix) and len(name) > len(suffix):
+            return name[: -len(suffix)]
+    split = re.match(r"^(.+)\.(\d{3})$", name)
+    if split and split.group(1):
+        name = split.group(1)
+    part = re.match(r"^(.+)\.part\d+\.rar$", name, re.IGNORECASE)
+    if part:
+        return part.group(1)
+    return Path(name).stem or name
+
+
+def _part_number(path: Path) -> int:
+    found = re.search(r"\.part(\d+)", path.name, re.IGNORECASE)
+    return int(found.group(1)) if found else 0
+
+
 def multipart_group(path: str | Path) -> list[Path]:
     """Return known sibling volumes in order, starting with the supplied path."""
     p = Path(path)
@@ -57,7 +90,7 @@ def multipart_group(path: str | Path) -> list[Path]:
         prefix = match.group(1)
         pattern = re.compile(rf"^{re.escape(prefix)}\.part(\d+)\.rar$", re.IGNORECASE)
         files = [x for x in p.parent.iterdir() if pattern.match(x.name)]
-        return sorted(files, key=lambda x: int(re.search(r"\.part(\d+)", x.name, re.I).group(1)))
+        return sorted(files, key=_part_number)
     match = re.match(r"^(.*\.7z)\.(\d{3})$", name, re.IGNORECASE)
     if match:
         base = match.group(1)

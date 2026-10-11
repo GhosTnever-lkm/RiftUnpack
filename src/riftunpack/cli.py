@@ -10,6 +10,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from rich.console import Console
+from rich.markup import escape
 from rich.progress import (
     BarColumn,
     Progress,
@@ -20,7 +21,7 @@ from rich.progress import (
 )
 
 from . import __version__
-from .detect import detect_format
+from .detect import archive_base_name, detect_format
 from .engine import ExtractOptions, expand_inputs, extract_archive, list_archive, verify_archive
 from .errors import PasswordRequiredError, RiftUnpackError
 
@@ -112,16 +113,16 @@ def _password_retry(prompt_flag: bool, operation):
         return operation(_password(True))
 
 
-def _destination(archive: Path, args) -> Path:
+def _destination(archive: Path, args, archive_count: int = 1) -> Path:
     if args.here:
         return archive.parent
     if args.output:
         return (
             Path(args.output)
-            if len(getattr(args, "_archives", [])) <= 1
-            else Path(args.output) / archive.stem
+            if archive_count <= 1
+            else Path(args.output) / archive_base_name(archive)
         )
-    return archive.with_name(f"{archive.stem}_extracted")
+    return archive.with_name(f"{archive_base_name(archive)}_extracted")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -151,7 +152,6 @@ def main(argv: list[str] | None = None) -> int:
         if not archives:
             print("No recognized archives found.", file=sys.stderr)
             return 2
-        args._archives = archives
         console = Console()
         console.print(f"[bold cyan]RiftUnpack[/bold cyan] — {len(archives)} archive(s)")
         results = []
@@ -169,17 +169,17 @@ def main(argv: list[str] | None = None) -> int:
         )
         with progress_ui:
             task_ids = {
-                archive: progress_ui.add_task(archive.name, total=1) for archive in archives
+                archive: progress_ui.add_task(escape(archive.name), total=1) for archive in archives
             }
 
             def run(archive: Path):
                 task_id = task_ids[archive]
-                destination = _destination(archive, args)
+                destination = _destination(archive, args, len(archives))
 
                 def progress(current, total, name):
                     progress_ui.update(
                         task_id,
-                        description=f"{archive.name}: {name[:48]}",
+                        description=f"{escape(archive.name)}: {escape(name[:48])}",
                         total=max(total, 1),
                         completed=current,
                     )
@@ -210,17 +210,28 @@ def main(argv: list[str] | None = None) -> int:
                         report = future.result()
                         results.append(report)
                         console.print(
-                            f"[green]✓[/green] {archive.name}: {report.extracted} files, "
-                            f"{report.bytes_written:,} bytes → {report.destination}"
+                            f"[green]✓[/green] {escape(archive.name)}: {report.extracted} files, "
+                            f"{report.bytes_written:,} bytes → {escape(str(report.destination))}"
                         )
                         for warning in report.warnings:
-                            console.print(f"  [yellow]! {warning}[/yellow]")
+                            console.print(f"  [yellow]! {escape(str(warning))}[/yellow]")
                     except RiftUnpackError as exc:
                         results.append(None)
                         progress_ui.update(
-                            task_ids[archive], description=f"[red]{archive.name}: failed[/red]"
+                            task_ids[archive],
+                            description=f"[red]{escape(archive.name)}: failed[/red]",
                         )
-                        console.print(f"[red]✗ {archive.name}: {exc}[/red]")
+                        console.print(f"[red]✗ {escape(archive.name)}: {escape(str(exc))}[/red]")
+                    except Exception as exc:  # noqa: BLE001 - one bad archive must not stop the batch
+                        results.append(None)
+                        progress_ui.update(
+                            task_ids[archive],
+                            description=f"[red]{escape(archive.name)}: failed[/red]",
+                        )
+                        console.print(
+                            f"[red]✗ {escape(archive.name)}: unexpected error: "
+                            f"{escape(type(exc).__name__)}: {escape(str(exc))}[/red]"
+                        )
         good = sum(item is not None for item in results)
         console.print(f"Summary: {good}/{len(archives)} archives extracted.")
         return 0 if good == len(archives) else 1

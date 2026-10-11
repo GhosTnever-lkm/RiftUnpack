@@ -6,9 +6,11 @@ import bz2
 import gzip
 import lzma
 import os
+import re
 import shutil
 import stat
 import subprocess
+import sys
 import tarfile
 import tempfile
 import zipfile
@@ -16,10 +18,11 @@ from collections.abc import Callable, Iterable
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime
+from functools import partial
 from pathlib import Path
-from typing import BinaryIO
+from typing import IO, Any
 
-from .detect import detect_format, multipart_group
+from .detect import archive_base_name, detect_format, multipart_group
 from .errors import (
     ArchiveLimitError,
     CancelledError,
@@ -27,6 +30,7 @@ from .errors import (
     RiftUnpackError,
     UnsafeArchiveError,
     UnsupportedFormatError,
+    UnsupportedMethodError,
 )
 from .safety import matches_patterns, safe_join, safe_member_name
 
@@ -54,7 +58,7 @@ class Member:
     compressed: int
     is_dir: bool
     is_link: bool
-    opener: Callable[[], BinaryIO] | None = None
+    opener: Callable[[], IO[bytes] | None] | None = None
     mtime: float | None = None
     mode: int | None = None
 
@@ -110,17 +114,13 @@ def _decode_legacy_zip_name(item: zipfile.ZipInfo, encoding: str | None) -> None
 def _zip_members(
     path: Path, password: str | None, encoding: str | None
 ) -> tuple[list[Member], object]:
+    # ZipFile(metadata_encoding=...) exists only on Python 3.11+. On 3.10 the name is
+    # re-decoded by _decode_legacy_zip_name below instead.
+    kwargs: dict[str, Any] = {}
+    if encoding and sys.version_info >= (3, 11):
+        kwargs["metadata_encoding"] = encoding
     try:
-        try:
-            archive = (
-                zipfile.ZipFile(path, metadata_encoding=encoding)
-                if encoding
-                else zipfile.ZipFile(path)
-            )
-        except TypeError:
-            # Python 3.10 has no metadata_encoding argument. Keep the original ZIP
-            # member name for local-header validation; adjust only its display path.
-            archive = zipfile.ZipFile(path)
+        archive = zipfile.ZipFile(path, **kwargs)
     except (OSError, zipfile.BadZipFile) as exc:
         raise RiftUnpackError(f"Could not open ZIP archive: {exc}") from exc
     result = []
@@ -138,7 +138,7 @@ def _zip_members(
                 item.compress_size,
                 item.is_dir(),
                 stat.S_ISLNK(mode),
-                lambda i=item: archive.open(i, pwd=_password_bytes(password)),
+                partial(archive.open, item, pwd=_password_bytes(password)),
                 member_mtime,
                 mode & 0o777,
             )
@@ -161,7 +161,7 @@ def _tar_members(path: Path) -> tuple[list[Member], object]:
                 item.size,
                 item.isdir(),
                 item.issym() or item.islnk() or unsafe_type,
-                (lambda i=item: archive.extractfile(i)) if item.isfile() else None,
+                partial(archive.extractfile, item) if item.isfile() else None,
                 item.mtime,
                 item.mode,
             )
@@ -189,7 +189,7 @@ def _rar_members(path: Path, password: str | None, encoding: str | None):
                     item.compress_size,
                     item.isdir(),
                     is_link,
-                    lambda i=item: archive.open(i, pwd=password),
+                    partial(archive.open, item, pwd=password),
                 )
             )
         return result, archive
@@ -197,7 +197,7 @@ def _rar_members(path: Path, password: str | None, encoding: str | None):
         raise RiftUnpackError(
             "This split RAR set is missing its first volume (.part1.rar)."
         ) from exc
-    except rarfile.RarError as exc:
+    except rarfile.Error as exc:
         raise PasswordRequiredError(
             "RAR could not be read. Check the password and install UnRAR or 7-Zip."
         ) from exc
@@ -306,6 +306,25 @@ def _missing_backend_message(fmt: str) -> str:
     )
 
 
+def _looks_like_password_error(lines: list[str]) -> bool:
+    """7-Zip reports a missing password as 'Wrong password' or 'Break signaled'."""
+    text = " ".join(lines).lower()
+    return "password" in text or "break signaled" in text
+
+
+def _seven_zip_binary(executable: str | None = None) -> str | None:
+    return executable or shutil.which("7z") or shutil.which("7zz") or shutil.which("7za")
+
+
+def _seven_zip_available(options: ExtractOptions) -> bool:
+    return _seven_zip_binary(options.seven_zip) is not None
+
+
+def _is_split_archive(path: Path) -> bool:
+    """True for 7-Zip style volume names such as archive.7z.001 or archive.zip.001."""
+    return re.search(r"\.\d{3}$", path.name) is not None
+
+
 def _external_7z(
     path: Path,
     destination: Path,
@@ -314,22 +333,25 @@ def _external_7z(
     options: ExtractOptions,
     cancel: Cancel | None,
 ) -> None:
-    binary = executable or shutil.which("7z") or shutil.which("7zz") or shutil.which("7za")
+    binary = _seven_zip_binary(executable)
     if not binary:
         raise UnsupportedFormatError(_missing_backend_message(detect_format(path) or "archive"))
-    listing_command = [binary, "l", "-slt"]
-    if password:
-        listing_command.append(f"-p{password}")
-    listing_command.append(str(path))
+    password_args = [f"-p{password}"] if password else []
+    # stdin is closed so 7-Zip can never block on an interactive password prompt.
     try:
         listing = subprocess.run(
-            listing_command, capture_output=True, text=True, timeout=120, check=False
+            [binary, "l", "-slt", *password_args, str(path)],
+            capture_output=True,
+            text=True,
+            timeout=120,
+            check=False,
+            stdin=subprocess.DEVNULL,
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise RiftUnpackError(f"7-Zip could not inspect the archive: {exc}") from exc
     if listing.returncode:
         detail = (listing.stderr or listing.stdout).strip().splitlines()
-        if "password" in " ".join(detail).lower():
+        if _looks_like_password_error(detail):
             raise PasswordRequiredError("Archive password is missing or incorrect.")
         raise RiftUnpackError(
             f"7-Zip could not inspect archive: {detail[-1] if detail else 'unknown error'}"
@@ -357,59 +379,48 @@ def _external_7z(
         size = int(item.get("Size", "0") or 0)
         packed = int(item.get("Packed Size", "0") or 0)
         checked.append(Member(name, size, packed, item.get("Folder") == "+", False))
-    # Reuse configured safeguards before the external program touches staging.
     selected = [m for m in checked if matches_patterns(m.name, options.include)]
     _check_limits(selected, options)
-    command = [binary, "x", "-y", f"-o{destination}"]
-    if password:
-        command.append(f"-p{password}")
-    command.append(str(path))
-    try:
-        process = subprocess.Popen(
-            command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
-        )
-        while process.poll() is None:
-            if cancel and cancel():
-                process.terminate()
-                process.wait(timeout=5)
-                raise CancelledError("Extraction cancelled by user.")
+    command = [binary, "x", "-y", f"-o{destination}", *password_args, str(path)]
+    # Output goes to temporary files: reading a pipe only after exit can deadlock on large listings.
+    with (
+        tempfile.TemporaryFile("w+", encoding="utf-8", errors="replace") as stdout_file,
+        tempfile.TemporaryFile("w+", encoding="utf-8", errors="replace") as stderr_file,
+    ):
+        try:
+            process = subprocess.Popen(
+                command, stdout=stdout_file, stderr=stderr_file, stdin=subprocess.DEVNULL
+            )
+        except OSError as exc:
+            raise RiftUnpackError(f"7-Zip could not run: {exc}") from exc
+        while True:
             try:
-                process.wait(timeout=0.1)
+                returncode = process.wait(timeout=0.1)
+                break
             except subprocess.TimeoutExpired:
-                continue
-        stdout, stderr = process.communicate()
-        result = subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
-    except (OSError, subprocess.TimeoutExpired) as exc:
-        raise RiftUnpackError(f"7-Zip could not run: {exc}") from exc
-    if result.returncode:
-        msg = (result.stderr or result.stdout).strip().splitlines()
-        if "password" in " ".join(msg).lower():
+                if cancel and cancel():
+                    process.terminate()
+                    try:
+                        process.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        process.kill()
+                        process.wait()
+                    raise CancelledError("Extraction cancelled by user.") from None
+        stdout_file.seek(0)
+        stderr_file.seek(0)
+        stdout_text = stdout_file.read()
+        stderr_text = stderr_file.read()
+    if returncode:
+        msg = (stderr_text or stdout_text).strip().splitlines()
+        if _looks_like_password_error(msg):
             raise PasswordRequiredError("Archive password is missing or incorrect.")
         raise RiftUnpackError(f"7-Zip extraction failed: {msg[-1] if msg else 'unknown error'}")
     if options.include:
-        for item in destination.rglob("*"):
-            if item.is_file() and not matches_patterns(
-                item.relative_to(destination).as_posix(), options.include
+        for leftover in destination.rglob("*"):
+            if leftover.is_file() and not matches_patterns(
+                leftover.relative_to(destination).as_posix(), options.include
             ):
-                item.unlink()
-
-
-def _choose_target(path: Path, root: Path, conflict: str) -> Path | None:
-    target = safe_join(root, path.relative_to(root).as_posix())
-    if not target.exists():
-        return target
-    if conflict == "skip":
-        return None
-    if conflict == "overwrite":
-        return target
-    if conflict != "rename":
-        raise ValueError("conflict must be overwrite, skip, or rename")
-    i = 1
-    while True:
-        candidate = target.with_name(f"{target.stem} ({i}){target.suffix}")
-        if not candidate.exists():
-            return candidate
-        i += 1
+                leftover.unlink()
 
 
 def _copy_stage(
@@ -502,18 +513,28 @@ def extract_archive(
         return _extract_external(path, destination, fmt, options, progress, cancel)
     if fmt == "7z":
         return _extract_7z(path, destination, options, progress, cancel)
+    if fmt == "zip" and _is_split_archive(path):
+        return _extract_via_7zip(path, destination, fmt, options, progress, cancel)
     volumes = multipart_group(path)
     primary = volumes[0] if volumes and path.suffix.lower() in {".z01", ".001"} else path
     if len(volumes) > 1 and primary != path and primary.suffix.lower() == ".z01":
         primary = volumes[-1]
     if fmt == "zip" and len(volumes) > 1:
-        if options.seven_zip or shutil.which("7z") or shutil.which("7zz") or shutil.which("7za"):
-            return _extract_external(primary, destination, fmt, options, progress, cancel)
+        if _seven_zip_available(options):
+            return _extract_via_7zip(primary, destination, fmt, options, progress, cancel)
         raise UnsupportedFormatError(
             "Split ZIP archives need 7-Zip installed to read .z01/.zip volume sets."
         )
     report = ExtractionReport(path, fmt, destination)
-    _extract_python_backend(primary, destination, fmt, options, report, progress, cancel)
+    try:
+        _extract_python_backend(primary, destination, fmt, options, report, progress, cancel)
+    except UnsupportedMethodError as exc:
+        if fmt != "zip" or not _seven_zip_available(options):
+            raise RiftUnpackError(
+                f"{path.name} uses an encryption or compression method that the built-in reader "
+                "does not support. Install 7-Zip (7z or 7za on PATH) and try again."
+            ) from exc
+        report = _extract_via_7zip(primary, destination, fmt, options, progress, cancel)
     if deep and _depth < max_depth:
         nested = [
             p
@@ -521,7 +542,7 @@ def extract_archive(
             if p.is_file() and p.resolve() not in existing_files and detect_format(p)
         ]
         for child in nested:
-            child_dest = child.parent / child.stem
+            child_dest = child.parent / archive_base_name(child)
             extract_archive(
                 child, child_dest, options, progress, cancel, True, max_depth, _depth + 1
             )
@@ -529,7 +550,10 @@ def extract_archive(
 
 
 def _extract_python_backend(path, destination, fmt, options, report, progress, cancel):
-    members, archive = _backend(path, fmt, options)
+    try:
+        members, archive = _backend(path, fmt, options)
+    except NotImplementedError as exc:
+        raise UnsupportedMethodError(str(exc)) from exc
     try:
         selected = [m for m in members if matches_patterns(m.name, options.include)]
         _check_limits(selected, options)
@@ -581,7 +605,15 @@ def _extract_python_backend(path, destination, fmt, options, report, progress, c
                                     "Actual compression ratio exceeded the configured limit."
                                 )
                             out.write(chunk)
-                except (RuntimeError, zipfile.BadZipFile, OSError) as exc:
+                except NotImplementedError as exc:
+                    raise UnsupportedMethodError(str(exc)) from exc
+                except (
+                    RuntimeError,
+                    zipfile.BadZipFile,
+                    tarfile.TarError,
+                    EOFError,
+                    OSError,
+                ) as exc:
                     if "password" in str(exc).lower() or "encrypted" in str(exc).lower():
                         raise PasswordRequiredError(
                             "Archive password is missing or incorrect."
@@ -616,21 +648,50 @@ def _extract_7z(path, destination, options, progress, cancel):
     with tempfile.TemporaryDirectory(prefix=".riftunpack-", dir=destination) as tmp:
         stage = Path(tmp) / "stage"
         stage.mkdir()
-        try:
-            members = _py7zr_extract(path, stage, options.password, options)
-        except UnsupportedFormatError:
+        if _is_split_archive(path):
             _external_7z(path, stage, options.seven_zip, options.password, options, cancel)
-            members = []
-        filtered = [m for m in members if matches_patterns(m.name, options.include)]
-        if options.include:
-            # py7zr extracts all members; discard unselected files before copying.
-            allowed = {safe_member_name(m.name) for m in filtered}
+            filtered_by_tool = True
+        else:
+            try:
+                _py7zr_extract(path, stage, options.password, options)
+                filtered_by_tool = False
+            except RiftUnpackError as exc:
+                # Limits, unsafe names, and passwords are final answers; other failures may
+                # be handled by 7-Zip when it is installed.
+                if isinstance(exc, (PasswordRequiredError, UnsafeArchiveError, ArchiveLimitError)):
+                    raise
+                if not _seven_zip_available(options):
+                    raise
+                shutil.rmtree(stage, ignore_errors=True)
+                stage.mkdir()
+                _external_7z(path, stage, options.seven_zip, options.password, options, cancel)
+                filtered_by_tool = True
+        if options.include and not filtered_by_tool:
+            # py7zr extracts every member; keep only the selected files before copying.
             for item in stage.rglob("*"):
-                if item.is_file() and item.relative_to(stage).as_posix() not in allowed:
+                if item.is_file() and not matches_patterns(
+                    item.relative_to(stage).as_posix(), options.include
+                ):
                     item.unlink()
-        _check_limits(filtered, options)
         _copy_stage(stage, destination, options, report, progress, cancel)
     return report
+
+
+def _extract_via_7zip(path, destination, fmt, options, progress, cancel):
+    """Extract any archive that 7-Zip understands (used for split and unsupported sets)."""
+    report = ExtractionReport(path, fmt, destination)
+    destination.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=".riftunpack-", dir=destination) as tmp:
+        stage = Path(tmp) / "stage"
+        stage.mkdir()
+        _external_7z(path, stage, options.seven_zip, options.password, options, cancel)
+        _copy_stage(stage, destination, options, report, progress, cancel)
+    return report
+
+
+def _is_root_entry(name: str) -> bool:
+    """ISO and some other images list their root directory as '.' or '/'."""
+    return name.strip("./\\") == ""
 
 
 def _libarchive_list(path: Path, options: ExtractOptions) -> list[Member]:
@@ -647,13 +708,15 @@ def _libarchive_list(path: Path, options: ExtractOptions) -> list[Member]:
             members = []
             for entry in reader:
                 name = entry.pathname
+                if _is_root_entry(name):
+                    continue
                 members.append(
                     Member(
                         name,
                         int(entry.size or 0),
                         0,
-                        entry.isdir(),
-                        entry.issym() or entry.islnk(),
+                        entry.isdir,
+                        entry.issym or entry.islnk,
                         mtime=entry.mtime,
                         mode=entry.perm,
                     )
@@ -690,6 +753,8 @@ def _libarchive_extract(
             str(path), header_codec=options.encoding or "utf-8", passphrase=options.password
         ) as reader:
             for index, entry in enumerate(reader, 1):
+                if _is_root_entry(entry.pathname):
+                    continue
                 if not matches_patterns(entry.pathname, options.include):
                     # Consume skipped member blocks so the streaming reader can advance.
                     for _ in entry.get_blocks():
@@ -698,10 +763,10 @@ def _libarchive_extract(
                 if cancel and cancel():
                     raise CancelledError("Extraction cancelled by user.")
                 target = safe_join(stage, entry.pathname)
-                if entry.isdir():
+                if entry.isdir:
                     target.mkdir(parents=True, exist_ok=True)
                     continue
-                if not entry.isreg():
+                if not entry.isreg:
                     raise UnsafeArchiveError(
                         f"Special filesystem entry is not extracted: {entry.pathname}"
                     )
@@ -749,13 +814,11 @@ def _extract_external(path, destination, fmt, options, progress, cancel):
         except (UnsafeArchiveError, ArchiveLimitError, CancelledError):
             raise
         except RiftUnpackError:
-            if not (
-                options.seven_zip
-                or shutil.which("7z")
-                or shutil.which("7zz")
-                or shutil.which("7za")
-            ):
+            if not _seven_zip_available(options):
                 raise
+            # libarchive may have left partial files; start the fallback from an empty stage.
+            shutil.rmtree(stage, ignore_errors=True)
+            stage.mkdir()
             _external_7z(path, stage, options.seven_zip, options.password, options, cancel)
         _copy_stage(stage, destination, options, report, progress, cancel)
     return report

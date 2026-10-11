@@ -23,3 +23,7 @@ class PasswordRequiredError(RiftUnpackError):
 
 class CancelledError(RiftUnpackError):
     """The user cancelled the current extraction."""
+
+
+class UnsupportedMethodError(RiftUnpackError):
+    """The built-in reader cannot decode this archive's encryption or compression method."""

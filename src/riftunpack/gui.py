@@ -7,10 +7,10 @@ import threading
 import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, simpledialog, ttk
+from typing import Any
 
 from .detect import detect_format
-from .engine import ExtractOptions, extract_archive
-from .errors import CancelledError, PasswordRequiredError, RiftUnpackError
+from .jobs import ExtractionJob
 
 
 class RiftUnpackApp:
@@ -23,8 +23,7 @@ class RiftUnpackApp:
         root.minsize(540, 380)
         self.files: list[Path] = []
         self.events: queue.Queue = queue.Queue()
-        self.password_reply: queue.Queue = queue.Queue()
-        self.cancel_event = threading.Event()
+        self.job: ExtractionJob | None = None
         self.destination = tk.StringVar(value=str(Path.home() / "Extracted"))
         self.password: str | None = None
         style = ttk.Style(root)
@@ -47,13 +46,16 @@ class RiftUnpackApp:
         try:
             from tkinterdnd2 import DND_FILES
 
-            root.drop_target_register(DND_FILES)
-            root.dnd_bind("<<Drop>>", self._on_drop)
+            dnd: Any = root  # tkinterdnd2 adds these methods at runtime
+            dnd.drop_target_register(DND_FILES)
+            dnd.dnd_bind("<<Drop>>", self._on_drop)
             self.drop.configure(text="Drop archives here or use Add files")
-            self.drop.drop_target_register(DND_FILES)
-            self.drop.dnd_bind("<<Drop>>", self._on_drop)
-        except ImportError:
-            self.drop.configure(text="Drag-and-drop needs optional tkinterdnd2; use Add files")
+            dnd_label: Any = self.drop
+            dnd_label.drop_target_register(DND_FILES)
+            dnd_label.dnd_bind("<<Drop>>", self._on_drop)
+        except (ImportError, tk.TclError, AttributeError):
+            # tkinterdnd2 is missing, or the root is a plain tk.Tk without the DnD extension.
+            self.drop.configure(text="Drag-and-drop unavailable here; use Add files")
         buttons = ttk.Frame(root)
         buttons.pack(fill="x", padx=18, pady=6)
         ttk.Button(buttons, text="Add files…", command=self.add_files).pack(side="left")
@@ -133,66 +135,16 @@ class RiftUnpackApp:
         if not self.files:
             messagebox.showinfo("RiftUnpack", "Add at least one recognized archive first.")
             return
-        self.cancel_event.clear()
+        self.job = ExtractionJob(self.files, self.destination.get(), password=self.password)
         self.extract_button.configure(state="disabled")
         self.cancel_button.configure(state="normal")
         self._write(f"Starting {len(self.files)} archive(s)…")
-        threading.Thread(target=self._worker, daemon=True).start()
-
-    def _worker(self):
-        base = Path(self.destination.get())
-        for index, archive in enumerate(self.files, 1):
-            if self.cancel_event.is_set():
-                break
-            target = base / archive.stem
-            total_files = len(self.files)
-            try:
-                report = extract_archive(
-                    archive,
-                    target,
-                    ExtractOptions(password=self.password),
-                    progress=lambda c, t, n, i=index, total_files=total_files: self.events.put(
-                        ("progress", i, total_files, c, t, n)
-                    ),
-                    cancel=self.cancel_event.is_set,
-                )
-                self.events.put(("log", f"✓ {archive.name}: {report.extracted} files → {target}"))
-            except PasswordRequiredError:
-                self.events.put(("password_needed", archive.name))
-                password = None
-                answered = False
-                while not self.cancel_event.is_set() and not answered:
-                    try:
-                        password = self.password_reply.get(timeout=0.2)
-                        answered = True
-                    except queue.Empty:
-                        continue
-                if password:
-                    self.password = password
-                    try:
-                        report = extract_archive(
-                            archive,
-                            target,
-                            ExtractOptions(password=password),
-                            cancel=self.cancel_event.is_set,
-                        )
-                        self.events.put(
-                            ("log", f"✓ {archive.name}: {report.extracted} files → {target}")
-                        )
-                    except (RiftUnpackError, OSError) as exc:
-                        self.events.put(("log", f"✗ {archive.name}: {exc}"))
-                elif answered:
-                    self.events.put(("log", f"Skipped {archive.name}; no password entered."))
-            except CancelledError:
-                self.events.put(("log", "Cancelled."))
-                break
-            except (RiftUnpackError, OSError) as exc:
-                self.events.put(("log", f"✗ {archive.name}: {exc}"))
-        self.events.put(("done",))
+        threading.Thread(target=self.job.run, args=(self.events.put,), daemon=True).start()
 
     def cancel(self):
-        self.cancel_event.set()
-        self._write("Cancellation requested…")
+        if self.job is not None:
+            self.job.cancel()
+            self._write("Cancellation requested…")
 
     def _write(self, text):
         self.log.configure(state="normal")
@@ -213,9 +165,12 @@ class RiftUnpackApp:
                         show="*",
                         parent=self.root,
                     )
-                    self.password_reply.put(value)
+                    if self.job is not None:
+                        self.job.answer_password(value)
+                    if value:
+                        self.password = value
                 elif event[0] == "progress":
-                    _, i, n, current, total, name = event
+                    _, i, n, current, total, _name = event
                     self.progress["value"] = ((i - 1) + current / max(total, 1)) * 100 / n
                 elif event[0] == "done":
                     self.extract_button.configure(state="normal")
@@ -231,7 +186,8 @@ def main() -> None:
         from tkinterdnd2 import TkinterDnD
 
         root = TkinterDnD.Tk()
-    except ImportError:
+    except Exception:  # noqa: BLE001 - ImportError, or RuntimeError when tkdnd cannot load
+        # Drag-and-drop is optional at runtime: fall back to a plain Tk window.
         root = tk.Tk()
     RiftUnpackApp(root)
     root.mainloop()
