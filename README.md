@@ -29,7 +29,7 @@ Status reflects what the automated test suite exercises with real archive files.
 | ZST | Single-stream decompression with `zstandard` (installed by `.[all-formats]`) | Tested |
 | 7z | `py7zr` (base install); falls back to 7-Zip when `py7zr` cannot read the archive | Tested, including password and split `.7z.001` via 7-Zip |
 | ISO | `libarchive-c` (needs the native libarchive library) | Tested on Linux CI |
-| CAB | Windows `makecab`-built fixture only | Tested on Windows CI only; experimental elsewhere |
+| CAB | libarchive (uncompressed CABs are tested on any platform with libarchive); makecab-built CABs tested on Windows only | Partly tested; compressed CABs experimental |
 | RAR | `rarfile` plus an UnRAR, unar, or 7-Zip executable | Experimental: no real RAR fixture in tests |
 | Split ZIP `.zip.001` | 7-Zip | Tested |
 | Split RAR `.partN.rar`, ZIP `.z01` | Detected and grouped; extraction depends on the external tool | Experimental |
