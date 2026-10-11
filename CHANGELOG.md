@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.0.2] - 2026-10-11
+
+### Added
+- Unit tests for shared path-safety helpers (`safe_member_name`, `safe_join`, symlink and escape guards, glob matching); `safety.py` coverage 92% -> 98%.
+
 ## [1.0.1] - 2026-10-11
 
 ### Fixed
