@@ -614,7 +614,11 @@ def _extract_python_backend(path, destination, fmt, options, report, progress, c
                     EOFError,
                     OSError,
                 ) as exc:
-                    if "password" in str(exc).lower() or "encrypted" in str(exc).lower():
+                    message = str(exc).lower()
+                    # A wrong ZipCrypto password often decrypts to garbage that fails the
+                    # CRC check instead of raising a "bad password" error.
+                    wrong_password_likely = options.password is not None and "crc" in message
+                    if "password" in message or "encrypted" in message or wrong_password_likely:
                         raise PasswordRequiredError(
                             "Archive password is missing or incorrect."
                         ) from exc
