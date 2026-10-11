@@ -8,6 +8,13 @@
 5. [x] Docs and CI: README (tested claims only), CHANGELOG, templates, workflow with Windows executable smoke test.
 6. [x] Publish v1.0.1: pushed to GitHub; CI run #16 green on all jobs (checks x6, executables smoke test, release); release `v1.0.1` has `RiftUnpack.exe` and `RiftUnpack-GUI.exe`.
 
+## Iteration v1.0.2 (2026-10-11)
+- Added `tests/test_safety.py` (9 tests) for path-safety helpers; safety.py coverage 98%.
+- Version bumped to 1.0.2 across pyproject.toml, `__init__.py`, README, CHANGELOG.
+- Local check: 120 passed, 2 skipped; ruff and mypy clean. Total coverage 76% without a display (gui.py at 0% needs a display; Xvfb run remains the reference at ~85%).
+- Committed to main via browser (head 19a3ccb). Release v1.0.2 published: https://github.com/GhosTnever-lkm/RiftUnpack/releases/tag/v1.0.2
+- Remaining: raise non-GUI coverage toward the 80% floor (cli.py, engine.py); CI status for 19a3ccb not yet checked.
+
 ## Audit report (v1.0.1)
 
 Scope: the audit checklist (fresh main, tests and coverage, GUI, Windows executables, README, quality, security, STATE).
@@ -78,6 +85,7 @@ Experimental (code path exists, not verified with real archives):
 - Commit 924936a (`fix: preserve readable defaults for ZIP entries without mode`) was made by someone else; it is kept as is.
 - Release v1.0.0 exists with both Windows executables (built before this audit).
 - Release v1.0.1 published by the workflow: https://github.com/GhosTnever-lkm/RiftUnpack/releases/tag/v1.0.1 (tag follows `riftunpack.__version__`).
+- Release v1.0.2 published: https://github.com/GhosTnever-lkm/RiftUnpack/releases/tag/v1.0.2
 
 ## Next steps (after CI result)
 1. Confirm CI: checks on ubuntu/windows x 3.10–3.12, executable smoke test, release `v1.0.1` with both `.exe` assets.
