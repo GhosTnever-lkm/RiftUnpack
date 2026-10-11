@@ -925,7 +925,9 @@ def list_archive(path: str | Path, options: ExtractOptions | None = None) -> lis
     if fmt == "7z":
         try:
             import py7zr
-
+        except ImportError as exc:
+            raise UnsupportedFormatError(_missing_backend_message(fmt)) from exc
+        try:
             with py7zr.SevenZipFile(path, mode="r", password=options.password) as archive:
                 return [
                     Member(
@@ -941,8 +943,13 @@ def list_archive(path: str | Path, options: ExtractOptions | None = None) -> lis
                     )
                     for x in archive.list()
                 ]
-        except ImportError as exc:
-            raise UnsupportedFormatError(_missing_backend_message(fmt)) from exc
+        except Exception as exc:
+            text = str(exc).lower()
+            if options.password or "password" in text or "crc" in text or "decrypt" in text:
+                raise PasswordRequiredError(
+                    "7z needs a valid password, or its data failed a password/CRC check."
+                ) from exc
+            raise RiftUnpackError(f"7z listing failed: {exc}") from exc
     if fmt == "zst":
         return [Member(path.name, path.stat().st_size, path.stat().st_size, False, False)]
     if fmt in {"iso", "cab"}:
