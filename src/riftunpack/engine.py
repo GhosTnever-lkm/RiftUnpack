@@ -270,6 +270,17 @@ def _check_limits(members: list[Member], options: ExtractOptions) -> None:
         )
 
 
+def _rar_python_tool_available() -> bool:
+    """True when rarfile can extract RAR itself (needs UnRAR, unar, bsdtar, or 7-Zip)."""
+    try:
+        import rarfile
+
+        rarfile.tool_setup()
+    except Exception:  # ImportError, or rarfile.RarCannotExec when no tool is installed
+        return False
+    return True
+
+
 def _backend(path: Path, fmt: str, options: ExtractOptions):
     if fmt == "zip":
         return _zip_members(path, options.password, options.encoding)
@@ -515,6 +526,9 @@ def extract_archive(
         return _extract_7z(path, destination, options, progress, cancel)
     if fmt == "zip" and _is_split_archive(path):
         return _extract_via_7zip(path, destination, fmt, options, progress, cancel)
+    if fmt == "rar" and not _rar_python_tool_available():
+        # No UnRAR-compatible tool for rarfile: libarchive reads RAR itself, then 7-Zip.
+        return _extract_external(path, destination, fmt, options, progress, cancel)
     volumes = multipart_group(path)
     primary = volumes[0] if volumes and path.suffix.lower() in {".z01", ".001"} else path
     if len(volumes) > 1 and primary != path and primary.suffix.lower() == ".z01":
