@@ -154,3 +154,12 @@ def test_cli_output_survives_cp1252_pipe(tmp_path, monkeypatch):
     monkeypatch.setattr(sys, "stderr", io.TextIOWrapper(io.BytesIO(), encoding="cp1252"))
     assert main(["extract", str(path)]) == 0
     legacy.flush()
+
+
+def test_cli_seven_zip_option_is_passed_to_options():
+    from riftunpack.cli import _options, _parser
+
+    args = _parser().parse_args(["extract", "a.zip", "--seven-zip", r"C:\Tools\7z.exe"])
+    assert _options(args).seven_zip == r"C:\Tools\7z.exe"
+    plain = _parser().parse_args(["extract", "a.zip"])
+    assert _options(plain).seven_zip is None
