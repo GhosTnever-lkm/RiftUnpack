@@ -479,3 +479,16 @@ def test_detect_format_uses_content_not_extension(tmp_path):
     make.write_tar(fake_zip, {"a.txt": b"a"})
     assert detect_format(fake_zip) == "tar"
     assert detect_format(tmp_path / "missing.bin") is None
+
+
+@needs_libarchive
+def test_cab_stored_roundtrip_on_any_platform(tmp_path):
+    """Uncompressed CAB built in Python (no makecab needed), spanning two CFDATA blocks."""
+    big = bytes(range(256)) * 200
+    archive = make.write_cab_stored(tmp_path / "pkg.cab", {"hello.txt": b"cab", "dir/big.bin": big})
+    assert detect_format(archive) == "cab"
+    destination = tmp_path / "out"
+    report = extract_archive(archive, destination)
+    assert report.extracted == 2
+    assert (destination / "hello.txt").read_bytes() == b"cab"
+    assert (destination / "dir" / "big.bin").read_bytes() == big

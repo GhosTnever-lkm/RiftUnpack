@@ -175,3 +175,51 @@ def write_cab(path: Path, files: dict[str, bytes]) -> Path:
 
 def zip_bomb(path: Path, size: int = 20 * 1024 * 1024) -> Path:
     return write_zip(path, {"zeros.bin": b"\0" * size})
+
+
+def write_cab_stored(path: Path, files: dict[str, bytes]) -> Path:
+    """Build an uncompressed (typeCompress=none) single-folder CAB without makecab.
+
+    Layout follows the Microsoft CAB spec: CFHEADER, one CFFOLDER, CFFILE records, then
+    CFDATA blocks of at most 32 KiB. Checksums are left as zero, which the spec allows.
+    """
+    import struct
+
+    names = list(files)
+    payload = b"".join(files[name] for name in names)
+    blocks = [payload[i : i + 0x8000] for i in range(0, len(payload), 0x8000)] or [b""]
+    # Fixed date 2020-01-02 12:00:00 so output is reproducible.
+    date = ((2020 - 1980) << 9) | (1 << 5) | 2
+    time_ = (12 << 11) | (0 << 5) | 0
+    files_offset = 36 + 8
+    file_records = bytearray()
+    offset = 0
+    for name in names:
+        encoded = name.encode("ascii") + b"\x00"
+        file_records += struct.pack("<IIHHHH", len(files[name]), offset, 0, date, time_, 0x20)
+        file_records += encoded
+        offset += len(files[name])
+    data_offset = files_offset + len(file_records)
+    data = bytearray()
+    for block in blocks:
+        data += struct.pack("<IHH", 0, len(block), len(block)) + block
+    total = data_offset + len(data)
+    header = struct.pack(
+        "<4sIIIIIBBHHHHH",
+        b"MSCF",
+        0,
+        total,
+        0,
+        files_offset,
+        0,
+        3,
+        1,
+        1,  # cFolders
+        len(names),
+        0,  # flags (no reserve, no prev/next cabinet)
+        0,  # setID
+        0,  # iCabinet
+    )
+    folder = struct.pack("<IHH", data_offset, len(blocks), 0)
+    path.write_bytes(header + folder + bytes(file_records) + bytes(data))
+    return path
