@@ -715,7 +715,7 @@ def _is_root_entry(name: str) -> bool:
 def _libarchive_list(path: Path, options: ExtractOptions) -> list[Member]:
     try:
         import libarchive
-    except ImportError as exc:
+    except Exception as exc:  # ImportError, or TypeError/OSError when the native library is absent
         raise UnsupportedFormatError(
             _missing_backend_message(detect_format(path) or "archive")
         ) from exc
@@ -753,7 +753,7 @@ def _libarchive_extract(
 ) -> list[Member]:
     try:
         import libarchive
-    except ImportError as exc:
+    except Exception as exc:  # ImportError, or TypeError/OSError when the native library is absent
         raise UnsupportedFormatError(
             _missing_backend_message(detect_format(path) or "archive")
         ) from exc
