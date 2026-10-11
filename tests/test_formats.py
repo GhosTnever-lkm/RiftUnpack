@@ -509,3 +509,26 @@ def test_cab_stored_roundtrip_on_any_platform(tmp_path):
     assert report.extracted == 2
     assert (destination / "hello.txt").read_bytes() == b"cab"
     assert (destination / "dir" / "big.bin").read_bytes() == big
+
+
+def test_missing_native_libarchive_is_a_clean_error(tmp_path, monkeypatch):
+    """On Windows without libarchive, importing libarchive-c raises TypeError, not ImportError."""
+    import builtins
+
+    import archive_factory as make
+
+    from riftunpack import engine
+    from riftunpack.errors import UnsupportedFormatError
+
+    archive = make.write_cab_stored(tmp_path / "pkg.cab", {"a.txt": b"a"})
+    real_import = builtins.__import__
+
+    def broken_import(name, *args, **kwargs):
+        if name == "libarchive":
+            raise TypeError("argument of type 'NoneType' is not iterable")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", broken_import)
+    monkeypatch.setattr(engine, "_seven_zip_available", lambda options: False)
+    with pytest.raises(UnsupportedFormatError, match="CAB"):
+        extract_archive(archive, tmp_path / "out")
