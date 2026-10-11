@@ -66,6 +66,7 @@ riftunpack extract ./game-mods -r --include '*.pak' --include '*.ini'
 riftunpack extract ./bundle.zip --deep --max-depth 3 --conflict rename
 riftunpack extract ./protected.zip --password          # prompts securely
 riftunpack extract ./legacy.zip --encoding cp866
+riftunpack extract ./encrypted-aes.zip --seven-zip 'C:\Tools\7z.exe'   # custom 7-Zip for fallbacks
 riftunpack list ./modpack.zip
 riftunpack test ./modpack.zip
 ```

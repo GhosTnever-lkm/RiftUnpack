@@ -65,7 +65,7 @@ Experimental (code path exists, not verified with real archives):
 3. **Split RAR and `.z01` are unverified** (detection and grouping only).
 4. **CAB is verified only on Windows** (via `makecab`). The CI fixture test skips with makecab's output when the fixture cannot be built (it failed once on Windows CI). Linux relies on libarchive or 7-Zip and has no automated test.
 5. **Windows context menu is untested by automation.**
-6. **`--seven-zip` path is not exposed in the CLI** (internal option only; the auto-detected 7-Zip is used).
+6. ~~`--seven-zip` path not exposed in the CLI~~ — fixed: `extract --seven-zip PATH`.
 7. **Empty single-stream `.gz` is detected as `.tar.gz`** (it is a valid empty tar); the result is an empty folder, not an error.
 8. **GUI drag-and-drop depends on tkdnd** being loadable on the user's system; otherwise the plain window works and says so.
 
