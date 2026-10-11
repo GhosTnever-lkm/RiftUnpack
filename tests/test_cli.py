@@ -163,3 +163,70 @@ def test_cli_seven_zip_option_is_passed_to_options():
     assert _options(args).seven_zip == r"C:\Tools\7z.exe"
     plain = _parser().parse_args(["extract", "a.zip"])
     assert _options(plain).seven_zip is None
+
+
+def test_cli_test_command_reports_ok(tmp_path, capsys):
+    path = tmp_path / "ok.zip"
+    with zipfile.ZipFile(path, "w") as z:
+        z.writestr("file.txt", "content")
+    assert main(["test", str(path)]) == 0
+    assert "OK:" in capsys.readouterr().out
+
+
+def test_cli_extract_here_uses_archive_parent(tmp_path):
+    path = tmp_path / "here.zip"
+    with zipfile.ZipFile(path, "w") as z:
+        z.writestr("note.txt", "nearby")
+    assert main(["extract", "--here", str(path)]) == 0
+    assert (tmp_path / "note.txt").exists()
+
+
+def test_cli_list_encrypted_archive_reprompts_for_password(tmp_path, monkeypatch):
+    from riftunpack import cli
+
+    path = tmp_path / "vault.7z"
+    make.write_7z(path, {"hidden.txt": b"data"}, password="s3cret")
+    prompts = []
+    monkeypatch.setattr(
+        cli.getpass, "getpass", lambda prompt="": prompts.append(prompt) or "s3cret"
+    )
+    assert main(["list", str(path)]) == 0
+    assert prompts, "encrypted listing without --password must prompt once"
+
+
+def test_cli_extract_encrypted_archive_reprompts_for_password(tmp_path, monkeypatch):
+    from riftunpack import cli
+
+    path = tmp_path / "locked.7z"
+    make.write_7z(path, {"payload.txt": b"data"}, password="s3cret")
+    prompts = []
+    monkeypatch.setattr(
+        cli.getpass, "getpass", lambda prompt="": prompts.append(prompt) or "s3cret"
+    )
+    assert main(["extract", str(path)]) == 0
+    assert prompts, "encrypted extract without --password must prompt"
+    assert (tmp_path / "locked_extracted" / "payload.txt").exists()
+
+
+def test_cli_batch_known_error_is_reported(tmp_path, monkeypatch, capsys):
+    import riftunpack.cli as cli
+    from riftunpack.errors import RiftUnpackError
+
+    path = tmp_path / "broken.zip"
+    with zipfile.ZipFile(path, "w") as z:
+        z.writestr("a.txt", "a")
+
+    def refuse(archive, *args, **kwargs):
+        raise RiftUnpackError("unsupported archive feature")
+
+    monkeypatch.setattr(cli, "extract_archive", refuse)
+    assert main(["extract", str(path)]) == 1
+    out = capsys.readouterr().out
+    assert "unsupported archive feature" in out
+    assert "0/1 archives extracted" in out
+
+
+def test_cli_list_missing_file_is_friendly(tmp_path, capsys):
+    missing = tmp_path / "nope.zip"
+    assert main(["list", str(missing)]) == 1
+    assert "RiftUnpack:" in capsys.readouterr().err
