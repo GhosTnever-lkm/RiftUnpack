@@ -587,7 +587,9 @@ def _extract_python_backend(path, destination, fmt, options, report, progress, c
                             "Archive password is missing or incorrect."
                         ) from exc
                     raise RiftUnpackError(f"Could not extract {member.name}: {exc}") from exc
-                if member.mode is not None:
+                # A zero mode in ZIP external attributes means "unspecified" for
+                # common non-Unix writers, not an intentional no-access file.
+                if member.mode is not None and member.mode & 0o777:
                     try:
                         target.chmod(member.mode & 0o777)
                     except OSError:
