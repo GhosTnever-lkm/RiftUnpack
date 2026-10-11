@@ -1,35 +1,40 @@
 # RiftUnpack
 
-**One fast, safe, offline-first extractor for everyday archives and game mods.** ZIP and TAR support works with Python's standard library; optional backends unlock more formats. No account, cloud upload, telemetry, or password guessing.
+**A fast, safe, offline archive extractor for everyday archives and game mods.** ZIP, TAR, and single-file compression work with Python's standard library plus the small dependencies installed with RiftUnpack. No account, cloud upload, telemetry, or password guessing.
 
-![RiftUnpack interface preview](docs/images/gui-preview.svg)
+![RiftUnpack desktop window after extracting two sample archives](docs/images/gui-screenshot.png)
 
-> v1.0.0 — Python 3.10+. Windows and Linux CI; Windows portable executables are attached to the GitHub Release when the release workflow completes.
+*Real screenshot: the desktop app extracting two sample archives (Linux, Xvfb).*
+
+> **v1.0.1** — Python 3.10+. Tested on Windows and Linux in CI. Windows portable executables (`RiftUnpack.exe`, `RiftUnpack-GUI.exe`) are attached to the GitHub Release.
 
 ## What it does
 
 - Detects archive formats from file signatures, not just extensions.
-- Extracts one or many archives, scans folders recursively, filters members with masks, lists contents, and checks CRC/integrity.
-- Protects against Zip Slip/path traversal, symbolic links, decompression bombs, excessive file counts, and excessive expansion ratios.
-- Supports password prompts (no brute force), nested extraction with a depth cap, overwrite/skip/rename conflict policies, filename-encoding overrides, and parallel archive batches.
-- Preserves file timestamps and basic permissions where supported by the format and platform.
-- Optional Tkinter desktop interface and Windows Explorer context-menu installer.
-- Runs locally and offline after its chosen backends are installed.
+- Extracts one or many archives, scans folders (optionally recursively), filters members with masks, lists contents, and checks integrity (CRC).
+- Blocks path traversal (Zip Slip), symbolic links, special files, decompression bombs, excessive file counts, and excessive compression ratios.
+- Prompts for passwords (no brute force), extracts nested archives up to a depth cap, applies overwrite/skip/rename conflict policies, and overrides legacy filename encodings.
+- Runs archive batches in parallel (`-j`).
+- Provides a CLI and a Tkinter desktop window with progress, log, password prompt, and cancel.
 
 ## Supported formats
 
-| Format | Backend / notes |
-|---|---|
-| ZIP | Built in (`zipfile`); encrypted entries supported when the ZIP uses compatible encryption |
-| TAR, TAR.GZ, TAR.BZ2, TAR.XZ | Built in (`tarfile`) |
-| GZ, BZ2, XZ | Built in single-stream decompression |
-| 7z | `py7zr`; alternatively install 7-Zip |
-| RAR | `rarfile` plus UnRAR, unar, or 7-Zip executable |
-| ZST | Single-stream decompression with optional `zstandard` |
-| ISO, CAB | Optional `libarchive-c` backend or installed 7-Zip |
-| Split RAR, 7z `.001`, ZIP `.z01` | Leading archive/volume set required; backend/tool must support the split format |
+Status reflects what the automated test suite exercises with real archive files. "Experimental" means the code path exists but RiftUnpack's tests do not verify it with real files yet.
 
-Availability varies by installed backend. RiftUnpack reports exactly what to install if a backend is missing. Filename encodings default to the format standard/UTF-8 rules; use `--encoding cp866`, `cp1251`, or `shift_jis` for legacy ZIP/RAR names when supported.
+| Format | How it is read | Status |
+|---|---|---|
+| ZIP | Built in (`zipfile`). ZipCrypto built in; AES needs 7-Zip | Tested |
+| TAR, TAR.GZ, TAR.BZ2, TAR.XZ | Built in (`tarfile`) | Tested |
+| GZ, BZ2, XZ | Built in single-stream decompression | Tested |
+| ZST | Single-stream decompression with `zstandard` (installed by `.[all-formats]`) | Tested |
+| 7z | `py7zr` (base install); falls back to 7-Zip when `py7zr` cannot read the archive | Tested, including password and split `.7z.001` via 7-Zip |
+| ISO | `libarchive-c` (needs the native libarchive library) | Tested on Linux CI |
+| CAB | Windows `makecab`-built fixture only | Tested on Windows CI only; experimental elsewhere |
+| RAR | `rarfile` plus an UnRAR, unar, or 7-Zip executable | Experimental: no real RAR fixture in tests |
+| Split ZIP `.zip.001` | 7-Zip | Tested |
+| Split RAR `.partN.rar`, ZIP `.z01` | Detected and grouped; extraction depends on the external tool | Experimental |
+
+Missing backends are reported with the exact package or tool to install. Filename encodings default to the format's standard rules (UTF-8 for ZIP when flagged). Legacy names can be decoded with `--encoding cp866`, `cp1251`, or `shift_jis`; these three are covered by tests.
 
 ## Install
 
@@ -37,11 +42,14 @@ Availability varies by installed backend. RiftUnpack reports exactly what to ins
 git clone https://github.com/GhosTnever-lkm/riftunpack.git
 cd riftunpack
 python -m pip install .
-# Optional integrations: libarchive formats, Zstandard, and drag-and-drop
+# Optional: libarchive (ISO) and Zstandard (ZST)
 python -m pip install '.[all-formats]'
 ```
 
-ZIP, TAR, GZ, BZ2, and XZ work offline once Python and RiftUnpack are installed. 7z uses `py7zr` from the base install. For RAR install an UnRAR/unar/7-Zip tool. ISO/CAB need 7-Zip or the optional `libarchive-c` backend. On Linux install Tkinter through your distribution package manager if it is absent.
+- ZIP, TAR, GZ, BZ2, XZ and 7z work after the base install.
+- ZIP AES archives and fallbacks for hard 7z archives need [7-Zip](https://www.7-zip.org/) (`7z`/`7za` on PATH).
+- RAR needs an UnRAR, unar, or 7-Zip executable.
+- The desktop app needs Tkinter. On Linux install it with your package manager (for example `python3-tk`).
 
 For development:
 
@@ -49,60 +57,60 @@ For development:
 python -m pip install -e '.[dev,all-formats]'
 ```
 
-## CLI examples
+## CLI
 
 ```bash
-riftunpack extract ./modpack.zip
+riftunpack extract ./modpack.zip                       # sibling folder: modpack_extracted/
 riftunpack extract ./mods-a.7z ./mods-b.tar.gz -o ./unpacked -j 2
-riftunpack extract ./game-mods --recursive --include '*.pak' --include '*.ini'
+riftunpack extract ./game-mods -r --include '*.pak' --include '*.ini'
 riftunpack extract ./bundle.zip --deep --max-depth 3 --conflict rename
+riftunpack extract ./protected.zip --password          # prompts securely
+riftunpack extract ./legacy.zip --encoding cp866
 riftunpack list ./modpack.zip
 riftunpack test ./modpack.zip
-riftunpack extract ./legacy.zip --encoding cp866
 ```
 
-Defaults cap each archive at 20 GiB expanded data, 100,000 files, and a 1000:1 compression ratio. Adjust using `--max-size-gb`, `--max-files`, and `--max-ratio`. Passwords are requested securely with `--password`.
+Defaults: 20 GB expanded size per archive (`--max-size-gb`), 100,000 files (`--max-files`), and a 1000:1 compression ratio (`--max-ratio`). Nested extraction is off unless `--deep` is given.
 
 ## Desktop app
 
-Run `riftunpack-gui` (or `python -m riftunpack.gui`). Add files or a folder, choose the destination, then extract. Drag-and-drop is provided by the bundled `tkinterdnd2` dependency. The window includes progress, a readable log, password prompts, and cancellation.
+Run `riftunpack-gui` (or `python -m riftunpack.gui`). Add files or a folder, choose the destination, and extract. Drag-and-drop works when `tkinterdnd2` is available (it is installed with RiftUnpack). Password prompts and cancel are available while a batch runs.
 
 ## Windows Explorer menu
 
-After installing the CLI or building the executable, run in PowerShell:
+Experimental: the script registers a per-user context-menu entry, but it is not covered by automated tests.
 
 ```powershell
 python packaging/install_context_menu.py "C:\path\to\RiftUnpack.exe"
 ```
 
-This registers **Extract here with RiftUnpack** for the current Windows user. Remove it with `python packaging/uninstall_context_menu.py`. No administrator rights are required.
+This adds **Extract here with RiftUnpack** for the current Windows user (no administrator rights). Remove it with `python packaging/uninstall_context_menu.py`.
 
 ## Build portable executables
 
 ```powershell
 pip install -e . pyinstaller
-pyinstaller --noconfirm --onefile --name RiftUnpack --paths src packaging/cli_entry.py
+pyinstaller --noconfirm --clean --onefile --name RiftUnpack --paths src packaging/cli_entry.py
 pyinstaller --noconfirm --clean --onefile --windowed --name RiftUnpack-GUI --paths src packaging/gui_entry.py
 ```
 
-CI runs pytest and Ruff on Windows and Linux for Python 3.10–3.12. The release workflow builds the Windows CLI and GUI `.exe` and publishes them to **v1.0.0** after checks pass. Optional runtime backends (7-Zip/UnRAR) must still be installed separately where required.
+The release workflow builds these two executables on Windows, smoke-tests them (extracts ZIP and 7z fixtures from the command line), and publishes them to the GitHub Release for the version in `pyproject.toml`.
 
 ## Security notes
 
-Archive member names are validated before writing. Extraction happens in a private staging directory inside the chosen destination, then safe regular files are copied into place. Symlinks and special filesystem objects are rejected. Size, file-count, and compression-ratio limits are configurable; do not raise them for untrusted downloads unless you understand the risk. Passwords are used only for the requested archive and are never guessed or stored. Keep external extraction tools up to date.
+Archive member names are validated before any write. Extraction happens in a private staging directory inside the destination; only safe regular files are then moved into place. Symbolic links and special filesystem objects are rejected. Size, file-count, and compression-ratio limits are configurable; do not raise them for untrusted archives unless you understand the risk. Passwords are kept in memory only for the current run (the desktop app keeps a password you set for its session) and are never written to disk or guessed.
 
-## Support / Pro Version
-
-RiftUnpack is open source and community-supported. **RiftUnpack Pro** is an idea for optional power-user features: scheduled batch jobs, cloud-folder workflows, and richer exportable reports. It is not part of v1.0.0 and does not change the offline-first free extractor.
+Known limitation: the 7-Zip fallback receives the password as a command-line argument, so it can be visible to other users on the same machine while 7-Zip runs. Prefer the built-in readers when possible.
 
 ## Development
 
 ```bash
 pytest
 ruff check .
+mypy
 ```
 
-See [STATE.md](STATE.md) for the implementation checklist and known backend boundaries. Contributions and reproducible security reports are welcome.
+See [STATE.md](STATE.md) for the audit report, known issues, and next steps, and [CHANGELOG.md](CHANGELOG.md) for release history.
 
 ## License
 

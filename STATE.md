@@ -1,29 +1,85 @@
 # RiftUnpack — STATE
 
 ## Plan
-1. [x] Extraction core: signature-based format detection, optional backend discovery, safe path handling, archive-bomb limits, conflict policy, password support, metadata preservation, multipart hints.
-2. [x] CLI: extraction, recursive discovery, member masks, listing, integrity checks, nested extraction, parallel batches, Windows context-menu scripts.
-3. [x] Tkinter GUI: drag and drop (when `tkinterdnd2` is installed), destination selection, password prompt, progress, log, cancellation.
-4. [x] Tests and lint: pytest with generated archives/fixtures; Ruff.
-5. [x] Docs, CI, and v1.0.0 release: README, LICENSE, CHANGELOG, templates, GitHub Actions workflow; repository published and CI green.
+1. [x] Extraction core: signature-based detection, optional backends, safe paths, bomb limits, conflict policy, passwords, metadata, multipart hints.
+2. [x] CLI: extraction, recursive discovery, masks, listing, integrity checks, nested extraction, parallel batches, Windows context-menu scripts.
+3. [x] Tkinter GUI: drag-and-drop (when tkdnd loads), destination, password prompt, progress, log, cancellation.
+4. [x] Tests and lint: real-archive tests, GUI/job tests, ruff, mypy, coverage floor 80% in CI.
+5. [x] Docs and CI: README (tested claims only), CHANGELOG, templates, workflow with Windows executable smoke test.
+6. [ ] Publish v1.0.1: push to GitHub, confirm CI green on all jobs, confirm release `v1.0.1` with both `.exe` files.
 
-## Verified so far
-- Python 3.13: `pytest` — 23 passed; `ruff check .` — all checks passed; coverage around 52%.
-- Covered: ZIP/TAR and compressed streams, 7z with password, encodings, path traversal, symlinks, archive-bomb limits, nested archives, cancellation.
-- PyInstaller CLI (`RiftUnpack`, Linux build, ~55 MB): `--version` and `--help` work; ZIP extraction smoke test works.
-- PyInstaller GUI (`RiftUnpack-GUI`) could not be built in this Linux sandbox: the Python here has no `tkinter`. The Windows release job builds it.
+## Audit report (v1.0.1)
+
+Scope: the audit checklist (fresh main, tests and coverage, GUI, Windows executables, README, quality, security, STATE).
+
+### Fixed
+- ISO/CAB via libarchive crashed on every entry (libarchive-c attribute API). Fixed.
+- RAR error handling used a non-existent `rarfile.RarError`. Fixed (`rarfile.Error`).
+- Split 7z (`.7z.001`) and split ZIP (`.zip.001`) were not readable. Now read through 7-Zip.
+- ZIP AES / unsupported methods: fall back to 7-Zip, otherwise a clear message.
+- 7-Zip path: pipe deadlock on large listings (output now goes to temp files), stdin closed, `--include` could delete all files. Fixed.
+- py7zr failure on 7z now falls back to 7-Zip (except for password / unsafe / limit errors).
+- Corrupt TAR data no longer leaks an internal exception.
+- `.tar.gz`/`.tar.xz` folder names (`x.tar/`) and split volume names. Fixed (`archive_base_name`).
+- CLI: Rich markup in names is escaped; one unexpected error no longer stops the batch.
+- GUI: queue/cancel/password logic moved into tkinter-free `riftunpack.jobs` and tested; wrong password re-prompts.
+- GUI startup crashed when `tkinterdnd2` was installed but tkdnd failed to load. Falls back to plain Tk.
+- ZIP `metadata_encoding` on Python 3.10: now gated by version instead of catching TypeError.
+- mypy: passes on `src/riftunpack` (config in pyproject). Lambda openers replaced by typed partials.
+- Dead code: scan found no unused functions. Unused imports: none (ruff F).
+- README: drawn fake preview replaced by a real screenshot; Pro section removed; formats table now reflects tests; every CLI example run against fixtures (one folder-name bug found and fixed).
+- Security: no tokens or keys in the tree or in `git log -p --all`; `.gitignore` covers caches, builds, coverage, and `.mypy_cache`. CI needs no secrets (`GITHUB_TOKEN` with `contents: write` only).
+
+### Remaining / to verify
+- CI on GitHub for the new workflow (Ubuntu and Windows matrix, executable smoke test, release job) — pending the v1.0.1 push.
+- Windows executables: built and smoke-tested only in CI (no Windows machine here).
+- GUI on Windows: tests run in CI on Windows; locally verified only under Xvfb on Linux.
+
+## Verified locally (sandbox: Linux, Python 3.13 with tkinter via Xvfb)
+- `pytest` default interpreter: 106 passed, 8 skipped (GUI tests need a display; CAB is Windows-only).
+- `pytest` under Xvfb with tkinter: 113 passed, 1 skipped (CAB).
+- Coverage (Xvfb run): total 85%; engine 82%, CLI 84%, GUI 83%, jobs 100%, detect 93%, safety 93%.
+- `ruff check .`, `ruff format --check`, `mypy` (`src/riftunpack`): all clean.
+- README CLI examples run against fixtures: `extract`, `-o` with multiple archives, `-r --include`, `--deep --max-depth`, `--encoding cp866`, `list`, `test`.
+- Packaging smoke script (`packaging/smoke_test_exe.py`) dry-run against Python entry points (wrappers, not frozen executables).
+- GUI screenshot captured from the real window after extracting two archives (`docs/images/gui-screenshot.png`).
+
+## Formats
+
+Tested with real archive files (generated by tests, extracted by the code under test):
+- ZIP (stored, deflated; ZipCrypto through 7-Zip; AES through 7-Zip; UTF-8 and legacy cp866/cp1251/Shift-JIS names)
+- TAR, TAR.GZ, TAR.BZ2, TAR.XZ, GZ, BZ2, XZ, ZST (`zstandard`)
+- 7z (py7zr; password; header encryption; split `.7z.001` via 7-Zip)
+- ZIP split `.zip.001` via 7-Zip
+- ISO (libarchive; skipped when libarchive is absent, e.g. Windows CI)
+- CAB (Windows `makecab`; Windows CI only)
+
+Experimental (code path exists, not verified with real archives):
+- RAR (`rarfile` + UnRAR/unar/7-Zip). Missing-backend message is tested; real RAR extraction is not.
+- Split RAR `.partN.rar` and ZIP `.z01`: grouping/detection tested; extraction not verified.
+- Windows Explorer context menu scripts.
+
+## Known issues («Известные проблемы»)
+1. **7-Zip password on the command line.** The 7-Zip fallback (for ZIP AES and some 7z archives) passes the password with `-p`, so it can appear in the process list for other local users while 7-Zip runs. 7-Zip has no stdin/file password option that we can use here. Mitigation: prefer built-in readers; documented in README.
+2. **RAR is unverified with real archives.** No RAR creator is available in CI; the RAR path needs a manual test with a real archive before it can be promoted from experimental.
+3. **Split RAR and `.z01` are unverified** (detection and grouping only).
+4. **CAB is verified only on Windows** (via `makecab`). Linux relies on libarchive or 7-Zip and has no automated test.
+5. **Windows context menu is untested by automation.**
+6. **`--seven-zip` path is not exposed in the CLI** (internal option only; the auto-detected 7-Zip is used).
+7. **Empty single-stream `.gz` is detected as `.tar.gz`** (it is a valid empty tar); the result is an empty folder, not an error.
+8. **GUI drag-and-drop depends on tkdnd** being loadable on the user's system; otherwise the plain window works and says so.
 
 ## Publication
 - Repository: https://github.com/GhosTnever-lkm/RiftUnpack (public, main).
-- The GitHub connector token cannot create repositories or push contents (403). The repository was created in the browser and the files were uploaded through the web UI.
-- CI "Tests, lint, and v1 release": green on the latest commit (checks on ubuntu/windows x Python 3.10–3.12, then release job).
-- Release v1.0.0 published by the workflow: https://github.com/GhosTnever-lkm/RiftUnpack/releases/tag/v1.0.0
-- Commit 924936a (`fix: preserve readable defaults for ZIP entries without mode`) was added to main by someone else; it is kept as is.
+- GitHub connector token: read-only in practice (403 on create repo and on contents writes). Changes are uploaded through the browser (the shared browser is logged in).
+- Commit 924936a (`fix: preserve readable defaults for ZIP entries without mode`) was made by someone else; it is kept as is.
+- Release v1.0.0 exists with both Windows executables (built before this audit).
+- Release v1.0.1 is produced by the workflow on push to main, tag `v1.0.1`.
 
-## Next steps
-1. Verify that the release contains RiftUnpack.exe and RiftUnpack-GUI.exe.
-2. Add repository topics from README.
-3. Run the Windows GUI smoke test on a Windows machine (tkinter is not available in this Linux sandbox).
+## Next steps (after CI result)
+1. Confirm CI: checks on ubuntu/windows x 3.10–3.12, executable smoke test, release `v1.0.1` with both `.exe` assets.
+2. Manual RAR check with a real archive from a RAR tool on a Windows machine; update the formats table.
+3. Consider exposing `--seven-zip` if users need a custom 7-Zip path.
 
 ## Known backend boundary
-Built-in ZIP/TAR/compressed-TAR support is offline and has no external runtime requirement. 7z requires `py7zr` or 7-Zip; RAR needs a compatible system tool; ZST needs `zstandard`; ISO/CAB need `libarchive-c` or 7-Zip. The app reports actionable installation guidance when a backend is missing. No password guessing is performed.
+Built-in ZIP/TAR/compressed-TAR support is offline with no external runtime requirement. 7z uses `py7zr` (base install) with 7-Zip as fallback. RAR needs `rarfile` plus an UnRAR/unar/7-Zip tool. ZST needs `zstandard`. ISO needs `libarchive-c` with the native libarchive. CAB needs libarchive or 7-Zip. The app reports actionable installation guidance when a backend is missing. No password guessing is performed.
