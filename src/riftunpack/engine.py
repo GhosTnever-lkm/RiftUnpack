@@ -482,11 +482,19 @@ def _copy_stage(
                 raise ValueError("conflict must be overwrite, skip, or rename")
         ensure_target = safe_join(destination, target.relative_to(destination).as_posix())
         ensure_target.parent.mkdir(parents=True, exist_ok=True)
-        with source.open("rb") as source_stream, ensure_target.open("wb") as output_stream:
-            while chunk := source_stream.read(1024 * 1024):
-                if cancel and cancel():
-                    raise CancelledError("Extraction cancelled by user.")
-                output_stream.write(chunk)
+        source_mode = stat.S_IMODE(source.stat().st_mode)
+        restore_mode = not (source_mode & stat.S_IRUSR)
+        if restore_mode:
+            source.chmod(source_mode | stat.S_IRUSR)
+        try:
+            with source.open("rb") as source_stream, ensure_target.open("wb") as output_stream:
+                while chunk := source_stream.read(1024 * 1024):
+                    if cancel and cancel():
+                        raise CancelledError("Extraction cancelled by user.")
+                    output_stream.write(chunk)
+        finally:
+            if restore_mode:
+                source.chmod(source_mode)
         if options.preserve_metadata:
             shutil.copystat(source, ensure_target, follow_symlinks=False)
         report.extracted += 1
@@ -639,7 +647,7 @@ def _extract_python_backend(path, destination, fmt, options, report, progress, c
                     raise RiftUnpackError(f"Could not extract {member.name}: {exc}") from exc
                 # A zero mode in ZIP external attributes means "unspecified" for
                 # common non-Unix writers, not an intentional no-access file.
-                if member.mode is not None and member.mode & 0o777:
+                if options.preserve_metadata and member.mode is not None and member.mode & 0o777:
                     try:
                         target.chmod(member.mode & 0o777)
                     except OSError:

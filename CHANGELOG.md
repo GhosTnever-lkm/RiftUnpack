@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.0.4] - 2026-10-13
+
+### Fixed
+- Honor `preserve_metadata=False` for archive member permissions.
+- Keep files readable while copying out of the private staging directory, then restore archived permissions only after copying; write-only or no-access archive modes no longer interrupt extraction.
+
 ## [1.0.3] - 2026-10-11
 
 ### Fixed

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "riftunpack"
-version = "1.0.3"
+version = "1.0.4"
 description = "Fast, offline-first and safety-focused archive extraction for players and modders"
 readme = "README.md"
 requires-python = ">=3.10"
