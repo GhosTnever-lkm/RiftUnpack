@@ -58,7 +58,7 @@ jobs:
       - run: pyinstaller --noconfirm --clean --onefile --windowed --name RiftUnpack-GUI --paths src packaging/gui_entry.py
       - name: Smoke-test the executables (no 7-Zip on PATH; ZIP and 7z extraction)
         run: python packaging/smoke_test_exe.py dist/RiftUnpack.exe dist/RiftUnpack-GUI.exe
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: windows-executables
           path: |
