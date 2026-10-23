@@ -6,7 +6,7 @@ on:
     branches: [main]
   workflow_dispatch:
 permissions:
-  contents: write
+  contents: read
 jobs:
   checks:
     strategy:
@@ -16,8 +16,8 @@ jobs:
         python: ['3.10', '3.11', '3.12']
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python }}
       - name: Linux test dependencies (7-Zip, libarchive, virtual display for the GUI)
@@ -45,8 +45,8 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
       - run: pip install -e . pyinstaller
@@ -58,19 +58,21 @@ jobs:
       - run: pyinstaller --noconfirm --clean --onefile --windowed --name RiftUnpack-GUI --paths src packaging/gui_entry.py
       - name: Smoke-test the executables (no 7-Zip on PATH; ZIP and 7z extraction)
         run: python packaging/smoke_test_exe.py dist/RiftUnpack.exe dist/RiftUnpack-GUI.exe
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: windows-executables
           path: |
             dist/RiftUnpack.exe
             dist/RiftUnpack-GUI.exe
   release:
+    permissions:
+      contents: write
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: executables
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
         with:
           name: windows-executables
           path: dist
