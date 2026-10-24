@@ -390,8 +390,10 @@ def _external_7z(
         size = int(item.get("Size", "0") or 0)
         packed = int(item.get("Packed Size", "0") or 0)
         checked.append(Member(name, size, packed, item.get("Folder") == "+", False))
-    selected = [m for m in checked if matches_patterns(m.name, options.include)]
-    _check_limits(selected, options)
+    # The external backend extracts into staging before include masks are applied.
+    # Enforce archive-wide limits here so excluded entries cannot exhaust disk or
+    # bypass the configured file-count and expanded-size caps during staging.
+    _check_limits(checked, options)
     command = [binary, "x", "-y", f"-o{destination}", *password_args, str(path)]
     # Output goes to temporary files: reading a pipe only after exit can deadlock on large listings.
     with (

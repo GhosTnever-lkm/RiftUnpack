@@ -2,14 +2,48 @@
 
 from __future__ import annotations
 
+import subprocess
+
 import archive_factory as make
 import pytest
 
+from riftunpack import engine
 from riftunpack.engine import ExtractOptions, extract_archive
 from riftunpack.engine import _extract_via_7zip as extract_via_7zip
-from riftunpack.errors import CancelledError, PasswordRequiredError, RiftUnpackError
+from riftunpack.errors import (
+    ArchiveLimitError,
+    CancelledError,
+    PasswordRequiredError,
+    RiftUnpackError,
+)
 
 needs_7za = pytest.mark.skipif(make.SEVEN_ZIP_BIN is None, reason="7-Zip (7za) not installed")
+
+
+def test_external_7zip_applies_limits_before_include_filter(tmp_path, monkeypatch):
+    listing = (
+        "Path = keep.pak\nFolder = -\nSize = 1\nPacked Size = 1\n\n"
+        "Path = excluded.bin\nFolder = -\nSize = 100\nPacked Size = 1\n\n"
+    )
+    monkeypatch.setattr(
+        engine.subprocess,
+        "run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(args[0], 0, listing, ""),
+    )
+
+    def unexpected_extract(*args, **kwargs):
+        raise AssertionError("7-Zip must not run after an archive-wide limit is exceeded")
+
+    monkeypatch.setattr(engine.subprocess, "Popen", unexpected_extract)
+    with pytest.raises(ArchiveLimitError, match="exceeds limit"):
+        engine._external_7z(
+            tmp_path / "archive.7z",
+            tmp_path / "stage",
+            "7z",
+            None,
+            ExtractOptions(include=["*.pak"], max_total_size=50),
+            None,
+        )
 
 
 @needs_7za

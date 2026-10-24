@@ -71,7 +71,7 @@ riftunpack list ./modpack.zip
 riftunpack test ./modpack.zip
 ```
 
-Defaults: 20 GB expanded size per archive (`--max-size-gb`), 100,000 files (`--max-files`), and a 1000:1 compression ratio (`--max-ratio`). Nested extraction is off unless `--deep` is given.
+Defaults: 20 GB expanded size per archive (`--max-size-gb`), 100,000 files (`--max-files`), and a 1000:1 compression ratio (`--max-ratio`). Limits apply to all archive entries before include masks; this keeps external extractors within the same staging bounds. Nested extraction is off unless `--deep` is given.
 
 ## Desktop app
 

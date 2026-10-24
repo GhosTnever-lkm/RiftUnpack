@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.0.5] - 2026-10-25
+
+### Fixed
+- Enforce expanded-size, file-count, and compression-ratio limits across every 7-Zip entry before extraction. Include masks are applied after staging, so excluded entries can no longer bypass archive limits while being unpacked.
+
 ## [1.0.4] - 2026-10-13
 
 ### Fixed
