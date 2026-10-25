@@ -6,7 +6,7 @@
 
 *Real screenshot: the desktop app extracting two sample archives (Linux, Xvfb).*
 
-> **v1.0.6** — Python 3.10+. Tested on Windows and Linux in CI. Windows portable executables (`RiftUnpack.exe`, `RiftUnpack-GUI.exe`) and a `SHA256SUMS.txt` verification manifest are attached to the GitHub Release.
+> **v1.0.7** — Python 3.10+. Tested on Windows and Linux in CI. Windows portable executables (`RiftUnpack.exe`, `RiftUnpack-GUI.exe`) and a `SHA256SUMS.txt` verification manifest are attached to the GitHub Release.
 
 ## What it does
 

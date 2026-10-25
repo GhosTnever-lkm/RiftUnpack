@@ -33,6 +33,19 @@ def test_traversal_is_rejected():
         safe_member_name("a/../../b.txt")
 
 
+@pytest.mark.parametrize(
+    "raw",
+    (
+        "visible.txt:hidden_payload",
+        "dir:stream/file.txt",
+        "dir/file.txt:Zone.Identifier",
+    ),
+)
+def test_windows_alternate_data_stream_names_are_rejected(raw):
+    with pytest.raises(UnsafeArchiveError, match="alternate data stream"):
+        safe_member_name(raw)
+
+
 def test_safe_join_keeps_target_under_root(tmp_path: Path):
     target = safe_join(tmp_path, "sub/file.txt")
     assert target == tmp_path / "sub" / "file.txt"
