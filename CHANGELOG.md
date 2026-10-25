@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.0.6] - 2026-10-25
+
+### Added
+- Publish a SHA-256 manifest for the Windows CLI and GUI executables with each release.
+- Keep the README release version synchronized with the package version.
+
 ## [1.0.5] - 2026-10-25
 
 ### Fixed

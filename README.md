@@ -6,7 +6,7 @@
 
 *Real screenshot: the desktop app extracting two sample archives (Linux, Xvfb).*
 
-> **v1.0.4** — Python 3.10+. Tested on Windows and Linux in CI. Windows portable executables (`RiftUnpack.exe`, `RiftUnpack-GUI.exe`) are attached to the GitHub Release.
+> **v1.0.6** — Python 3.10+. Tested on Windows and Linux in CI. Windows portable executables (`RiftUnpack.exe`, `RiftUnpack-GUI.exe`) and a `SHA256SUMS.txt` verification manifest are attached to the GitHub Release.
 
 ## What it does
 
@@ -95,7 +95,7 @@ pyinstaller --noconfirm --clean --onefile --name RiftUnpack --paths src packagin
 pyinstaller --noconfirm --clean --onefile --windowed --name RiftUnpack-GUI --paths src packaging/gui_entry.py
 ```
 
-The release workflow builds these two executables on Windows, smoke-tests them (extracts ZIP and 7z fixtures from the command line), and publishes them to the GitHub Release for the version in `pyproject.toml`.
+The release workflow builds these two executables on Windows, smoke-tests them (extracts ZIP and 7z fixtures from the command line), creates `SHA256SUMS.txt` from the built files, and publishes the executables and manifest to the GitHub Release for the version in `pyproject.toml`.
 
 ## Security notes
 
