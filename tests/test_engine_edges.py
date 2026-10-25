@@ -1,5 +1,6 @@
 """Edge-case error handling in the extraction engine."""
 
+import zipfile
 from pathlib import Path
 
 import pytest
@@ -7,7 +8,7 @@ import rar4_factory
 
 from riftunpack import engine
 from riftunpack.engine import ExtractOptions, extract_archive
-from riftunpack.errors import RiftUnpackError, UnsupportedFormatError
+from riftunpack.errors import RiftUnpackError, UnsafeArchiveError, UnsupportedFormatError
 
 
 def test_corrupt_zip_with_signature_is_friendly(tmp_path):
@@ -15,6 +16,18 @@ def test_corrupt_zip_with_signature_is_friendly(tmp_path):
     bad.write_bytes(b"PK\x03\x04" + b"\x00" * 32)
     with pytest.raises(RiftUnpackError, match="ZIP"):
         extract_archive(bad, tmp_path / "out")
+
+
+def test_zip_with_alternate_data_stream_member_is_rejected_before_output(tmp_path):
+    archive = tmp_path / "ads.zip"
+    with zipfile.ZipFile(archive, "w") as handle:
+        handle.writestr("visible.txt", "normal")
+        handle.writestr("visible.txt:hidden_payload", "hidden")
+
+    output = tmp_path / "out"
+    with pytest.raises(UnsafeArchiveError, match="alternate data stream"):
+        extract_archive(archive, output)
+    assert not output.exists()
 
 
 def test_corrupt_tar_with_signature_is_friendly(tmp_path):

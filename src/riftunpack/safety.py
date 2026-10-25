@@ -20,6 +20,10 @@ def safe_member_name(raw: str) -> str:
     parts = [part for part in PurePosixPath(name).parts if part not in ("", ".")]
     if not parts or any(part == ".." for part in parts):
         raise UnsafeArchiveError(f"Unsafe archive path traversal: {raw!r}")
+    if any(":" in part for part in parts):
+        raise UnsafeArchiveError(
+            f"Windows alternate data stream syntax is not supported: {raw!r}"
+        )
     return "/".join(parts)
 
 

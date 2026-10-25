@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.0.7] - 2026-10-25
+
+### Fixed
+- Reject archive member names containing Windows alternate data stream syntax, preventing ZIP entries from being silently redirected or lost during extraction on Windows.
+- Add direct and extraction-level regression coverage for alternate data stream member names.
+
 ## [1.0.6] - 2026-10-25
 
 ### Added
