@@ -118,19 +118,21 @@ def test_password_prompt_answer_reaches_job(app, tmp_path, monkeypatch):
 def test_main_falls_back_to_plain_tk_when_tkdnd_cannot_load(monkeypatch):
     """A broken tkinterdnd2 install must not stop the app from starting."""
     tkinterdnd2 = pytest.importorskip("tkinterdnd2")
-    try:
-        tk.Tk().destroy()
-    except tk.TclError:
-        pytest.skip("no display available for tkinter")
     created = []
+    mainloop_calls = []
+
+    class FakeRoot:
+        def mainloop(self):
+            mainloop_calls.append(True)
+
+    fallback_root = FakeRoot()
 
     def broken_tk(*args, **kwargs):
         raise RuntimeError("Unable to load tkdnd library.")
 
     monkeypatch.setattr(tkinterdnd2.TkinterDnD, "Tk", broken_tk)
-    monkeypatch.setattr(tk.Tk, "mainloop", lambda self, n=0: None)
+    monkeypatch.setattr(tk, "Tk", lambda: fallback_root)
     monkeypatch.setattr(gui, "RiftUnpackApp", lambda root: created.append(root))
     gui.main()
-    assert len(created) == 1
-    assert type(created[0]) is tk.Tk
-    created[0].destroy()
+    assert created == [fallback_root]
+    assert mainloop_calls == [True]
