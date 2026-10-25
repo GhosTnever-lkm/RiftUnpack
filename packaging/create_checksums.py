@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Sequence
 
 
 def digest_file(path: Path) -> str:
