@@ -16,3 +16,9 @@ def test_pyproject_version_matches_package_version():
 def test_changelog_has_current_version():
     changelog = (Path(__file__).resolve().parents[1] / "CHANGELOG.md").read_text(encoding="utf-8")
     assert f"## [{__version__}]" in changelog
+
+
+def test_readme_release_version_and_manifest_match_package():
+    readme = (Path(__file__).resolve().parents[1] / "README.md").read_text(encoding="utf-8")
+    assert f"**v{__version__}**" in readme
+    assert "SHA256SUMS.txt" in readme
